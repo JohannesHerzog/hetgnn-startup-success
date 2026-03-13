@@ -1,0 +1,14 @@
+data/*
+!data/.gitkeep
+outputs/
+wandb/
+logs/
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+*.pt
+*.log
+secrets.yaml
+.env
