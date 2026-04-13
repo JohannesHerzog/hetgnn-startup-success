@@ -128,12 +128,14 @@ def predict(data: StartupInput):
     for name in ("momentum", "liquidity"):
         if name in state:
             model = state[name]["model"]
-            # Score berechnen
+            # Score für BEIDE berechnen (Momentum & Liquidity)
             results[name] = round(float(model.predict_proba(X)[0][1]), 4)
-            # SHAP Plot generieren
-            results[f"plot_{name}_base64"] = get_shap_waterfall_base64(
-                model, ref["feature_names"], X, title=name.capitalize()
-            )
+            
+            # SHAP Plot ABER NUR für Momentum generieren
+            if name == "momentum":
+                results["plot_momentum_base64"] = get_shap_waterfall_base64(
+                    model, ref["feature_names"], X, title="Momentum Waterfall"
+                )
             
     return results
 
