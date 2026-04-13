@@ -2,6 +2,12 @@
 import os
 import numpy as np
 import joblib
+import io
+import base64
+import matplotlib
+matplotlib.use('Agg')  # WICHTIG: Verhindert GUI-Abstürze auf dem Server!
+import matplotlib.pyplot as plt
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from pydantic import BaseModel
@@ -79,10 +85,36 @@ def predict(data: StartupInput):
         return {"error": "No models loaded"}
 
     X = _build_vector(data, ref["feature_names"])
-    return {
-        name: round(float(state[name]["model"].predict_proba(X)[0][1]), 4)
-        for name in ("momentum", "liquidity") if name in state
-    }
+    
+    # 1. Scores berechnen
+    results = {}
+    for name in ("momentum", "liquidity"):
+        if name in state:
+            results[name] = round(float(state[name]["model"].predict_proba(X)[0][1]), 4)
+            
+    # 2. Werte für die Grafik extrahieren (Fallback auf 0, falls ein Modell fehlt)
+    mom_val = results.get("momentum", 0.0)
+    liq_val = results.get("liquidity", 0.0)
+    
+    # 3. Grafik erstellen
+    plt.figure(figsize=(6, 4))
+    plt.bar(['Momentum', 'Liquidity'], [mom_val, liq_val], color=['#1f77b4', '#2ca02c'])
+    plt.ylim(0, 1)
+    plt.ylabel('Probability')
+    plt.title('Startup Success Prediction')
+    
+    # 4. In Base64 umwandeln
+    buf = io.BytesIO()
+    plt.savefig(buf, format="png", bbox_inches='tight')
+    buf.seek(0)
+    plt.close() # Wichtig, um RAM freizugeben
+    
+    img_base64 = base64.b64encode(buf.read()).decode("utf-8")
+    
+    # 5. Base64 String zum JSON-Output hinzufügen
+    results["plot_base64"] = img_base64
+    
+    return results
 
 
 @app.get("/health")
