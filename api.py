@@ -1,11 +1,12 @@
 """FastAPI inference server for startup success prediction."""
 import os
-import numpy as np
-import joblib
 import io
 import base64
+import numpy as np
+import joblib
+import shap
 import matplotlib
-matplotlib.use('Agg')  # WICHTIG: Verhindert GUI-Abstürze auf dem Server!
+matplotlib.use('Agg')  # Verhindert GUI-Abstürze auf dem Server!
 import matplotlib.pyplot as plt
 
 from contextlib import asynccontextmanager
@@ -78,6 +79,43 @@ def _build_vector(data: StartupInput, feature_names: list) -> np.ndarray:
     return np.array([values], dtype=np.float32)
 
 
+def get_shap_waterfall_base64(model, feature_names, X, title):
+    """Generates a SHAP waterfall plot and returns it as a base64 string."""
+    explainer = shap.Explainer(model, feature_perturbation="interventional", link=shap.links.logit)
+    shap_values = explainer(X)
+
+    desc_indices = [i for i, n in enumerate(feature_names) if n.startswith("desc_emb_")]
+    other_indices = [i for i, n in enumerate(feature_names) if not n.startswith("desc_emb_")]
+
+    if desc_indices:
+        agg_values = shap_values.values[0][other_indices].tolist()
+        agg_values.append(shap_values.values[0][desc_indices].sum())
+        agg_data = X[0][other_indices].tolist()
+        agg_data.append(0.0) 
+        agg_names = [feature_names[i] for i in other_indices] + ["description (embedding)"]
+
+        new_shap = shap.Explanation(
+            values=np.array(agg_values),
+            base_values=shap_values.base_values[0],
+            data=np.array(agg_data),
+            feature_names=agg_names,
+        )
+    else:
+        new_shap = shap_values[0]
+
+    plt.figure()
+    shap.plots.waterfall(new_shap, show=False)
+    plt.title(title, pad=12)
+    plt.tight_layout()
+    
+    buf = io.BytesIO()
+    plt.savefig(buf, format="png", dpi=150, bbox_inches="tight")
+    buf.seek(0)
+    plt.close('all')
+    
+    return base64.b64encode(buf.read()).decode("utf-8")
+
+
 @app.post("/predict")
 def predict(data: StartupInput):
     ref = state.get("momentum") or state.get("liquidity")
@@ -86,34 +124,17 @@ def predict(data: StartupInput):
 
     X = _build_vector(data, ref["feature_names"])
     
-    # 1. Scores berechnen
     results = {}
     for name in ("momentum", "liquidity"):
         if name in state:
-            results[name] = round(float(state[name]["model"].predict_proba(X)[0][1]), 4)
+            model = state[name]["model"]
+            # Score berechnen
+            results[name] = round(float(model.predict_proba(X)[0][1]), 4)
+            # SHAP Plot generieren
+            results[f"plot_{name}_base64"] = get_shap_waterfall_base64(
+                model, ref["feature_names"], X, title=name.capitalize()
+            )
             
-    # 2. Werte für die Grafik extrahieren (Fallback auf 0, falls ein Modell fehlt)
-    mom_val = results.get("momentum", 0.0)
-    liq_val = results.get("liquidity", 0.0)
-    
-    # 3. Grafik erstellen
-    plt.figure(figsize=(6, 4))
-    plt.bar(['Momentum', 'Liquidity'], [mom_val, liq_val], color=['#1f77b4', '#2ca02c'])
-    plt.ylim(0, 1)
-    plt.ylabel('Probability')
-    plt.title('Startup Success Prediction')
-    
-    # 4. In Base64 umwandeln
-    buf = io.BytesIO()
-    plt.savefig(buf, format="png", bbox_inches='tight')
-    buf.seek(0)
-    plt.close() # Wichtig, um RAM freizugeben
-    
-    img_base64 = base64.b64encode(buf.read()).decode("utf-8")
-    
-    # 5. Base64 String zum JSON-Output hinzufügen
-    results["plot_base64"] = img_base64
-    
     return results
 
 
