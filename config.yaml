@@ -49,7 +49,8 @@ training:
   # test_ratio is 1 - train_ratio - val_ratio = 0.2
   reference_date: "2014-01-01"
   optimize_threshold: true
-  threshold_metric: f1
+  threshold_metric: min_recall
+  threshold_recall_target: 0.85
   maturity_gating:
     # Liquidity model only trains on "mature" startups to avoid
     # labelling young unfunded startups as failures.

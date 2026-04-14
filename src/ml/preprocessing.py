@@ -45,7 +45,7 @@ def encode_descriptions(df, config):
         raw = np.load(cache_path)
     else:
         import torch
-        device = "cuda" if torch.cuda.is_available() else "cpu"
+        device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
         print(f"  Encoding descriptions with sentence-transformer (device={device})...")
         model = SentenceTransformer("all-MiniLM-L6-v2", device=device)
         raw = model.encode(descriptions, batch_size=512, show_progress_bar=True).astype(np.float32)
