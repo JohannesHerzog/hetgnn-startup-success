@@ -15,9 +15,10 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import Optional
 
-MODELS_DIR = "models"
-PCA_PATH   = "data/embeddings_csv/org_pca_64d.pkl"
-EMB_DIM    = 64
+MODELS_DIR    = "models"
+PCA_PATH      = "data/embeddings_csv/org_pca_64d.pkl"
+CAT_MAP_PATH  = "data/embeddings_csv/cat_mappings.json"
+EMB_DIM       = 64
 
 state = {}
 
@@ -32,6 +33,12 @@ async def lifespan(app: FastAPI):
 
     if os.path.exists(PCA_PATH):
         state["pca"] = joblib.load(PCA_PATH)
+
+    if os.path.exists(CAT_MAP_PATH):
+        import json
+        with open(CAT_MAP_PATH) as f:
+            state["cat_mappings"] = json.load(f)
+        print(f"Loaded category mappings ({list(state['cat_mappings'].keys())})")
 
     from sentence_transformers import SentenceTransformer
     state["st"] = SentenceTransformer("all-MiniLM-L6-v2")
@@ -62,6 +69,7 @@ class StartupInput(BaseModel):
     total_investors:           Optional[float] = 0
     last_funding_stage:        Optional[float] = 0
     months_since_last_funding: Optional[float] = 0
+    city:                      Optional[str]   = None
 
 
 REFERENCE_DATE = datetime.date(2014, 1, 1)
@@ -92,7 +100,7 @@ def _build_vector(data: StartupInput, feature_names: list) -> np.ndarray:
         raw      = state["st"].encode([data.description], show_progress_bar=False)
         desc_emb = state["pca"].transform(raw)[0].astype(np.float32)
 
-    human = data.model_dump(exclude={"description"})
+    human = data.model_dump(exclude={"description", "city"})
 
     # Derive description fields from the actual text if not explicitly provided.
     if data.description:
@@ -106,6 +114,13 @@ def _build_vector(data: StartupInput, feature_names: list) -> np.ndarray:
     human["last_funding_on"] = _derive_last_funding_on(
         data.months_since_last_funding, data.num_funding_rounds
     )
+
+    # Resolve city string → training label-encoded integer via saved mapping.
+    if data.city and "cat_mappings" in state:
+        city_map = state["cat_mappings"].get("city", {})
+        human["city"] = float(city_map.get(data.city, 0.0))
+    else:
+        human["city"] = 0.0
 
     values, idx = [], 0
     for feat in feature_names:
