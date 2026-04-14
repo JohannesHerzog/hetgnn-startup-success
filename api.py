@@ -118,7 +118,7 @@ def _build_vector(data: StartupInput, feature_names: list) -> np.ndarray:
 
 def get_shap_waterfall_base64(model, feature_names, X, title):
     """Generates a SHAP waterfall plot and returns it as a base64 string."""
-    explainer = shap.TreeExplainer(model, feature_perturbation="tree_path_dependent")
+    explainer = shap.TreeExplainer(model, feature_perturbation="tree_path_dependent", link="logit")
     shap_values = explainer(X)
 
     desc_indices = [i for i, n in enumerate(feature_names) if n.startswith("desc_emb_")]
