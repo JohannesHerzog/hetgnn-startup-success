@@ -2,6 +2,7 @@
 import os
 import io
 import base64
+import datetime
 import numpy as np
 import joblib
 import shap
@@ -63,6 +64,28 @@ class StartupInput(BaseModel):
     months_since_last_funding: Optional[float] = 0
 
 
+REFERENCE_DATE = datetime.date(2014, 1, 1)
+
+
+def _derive_last_funding_on(months_since: float, num_rounds: float) -> float:
+    """Convert months_since_last_funding to days-since-2014-01-01 (training encoding).
+
+    If the startup was never funded (num_rounds == 0), return 0.
+    Otherwise subtract months from today to approximate the last funding date.
+    """
+    if num_rounds == 0:
+        return 0.0
+    months = int(months_since or 0)
+    today = datetime.date.today()
+    year  = today.year - months // 12
+    month = today.month - months % 12
+    if month <= 0:
+        month += 12
+        year  -= 1
+    last_date = datetime.date(year, month, 1)
+    return float((last_date - REFERENCE_DATE).days)
+
+
 def _build_vector(data: StartupInput, feature_names: list) -> np.ndarray:
     desc_emb = np.zeros(EMB_DIM, dtype=np.float32)
     if data.description and "pca" in state:
@@ -70,6 +93,20 @@ def _build_vector(data: StartupInput, feature_names: list) -> np.ndarray:
         desc_emb = state["pca"].transform(raw)[0].astype(np.float32)
 
     human = data.model_dump(exclude={"description"})
+
+    # Derive description fields from the actual text if not explicitly provided.
+    if data.description:
+        if not human.get("description_length"):
+            human["description_length"] = float(len(data.description))
+        if not human.get("has_description"):
+            human["has_description"] = 1.0
+
+    # Derive last_funding_on (days since 2014-01-01) — not in API input schema
+    # but present in the training feature set.
+    human["last_funding_on"] = _derive_last_funding_on(
+        data.months_since_last_funding, data.num_funding_rounds
+    )
+
     values, idx = [], 0
     for feat in feature_names:
         if feat.startswith("desc_emb_"):
@@ -81,7 +118,7 @@ def _build_vector(data: StartupInput, feature_names: list) -> np.ndarray:
 
 def get_shap_waterfall_base64(model, feature_names, X, title):
     """Generates a SHAP waterfall plot and returns it as a base64 string."""
-    explainer = shap.Explainer(model, feature_perturbation="interventional", link=shap.links.logit)
+    explainer = shap.TreeExplainer(model, feature_perturbation="tree_path_dependent")
     shap_values = explainer(X)
 
     desc_indices = [i for i, n in enumerate(feature_names) if n.startswith("desc_emb_")]
