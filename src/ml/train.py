@@ -119,7 +119,7 @@ def train_task(task_name, X, y, mask, splits, model_params, config):
     return model, threshold
 
 
-def save_bundle(model, feature_names, task_name, threshold, output_dir):
+def save_bundle(model, feature_names, task_name, threshold, output_dir, test_uuids=None):
     """Save a joblib bundle compatible with scripts/predict.py."""
     os.makedirs(output_dir, exist_ok=True)
     path = os.path.join(output_dir, f"xgboost_{task_name.lower()}.pkl")
@@ -129,21 +129,28 @@ def save_bundle(model, feature_names, task_name, threshold, output_dir):
         "task":          task_name,
         "num_classes":   2,
         "threshold":     threshold,
+        "test_uuids":    test_uuids if test_uuids is not None else set(),
     }
     joblib.dump(bundle, path)
     print(f"  Saved → {path}")
     return path
 
 
-def train(data, config):
-    """Train Momentum and Liquidity models and save bundles."""
+def train(data, config, models_dir=None):
+    """Train Momentum and Liquidity models, save bundles, and return them.
+
+    Returns:
+        dict: {task_name: {"model": model, "threshold": threshold}}
+    """
     X             = data["X"]
     feature_names = data["feature_names"]
     targets       = data["targets"]
     splits        = data["splits"]
     model_params  = config["model"]
-    models_dir    = config["paths"]["models_dir"]
+    models_dir    = models_dir or config["paths"]["models_dir"]
+    test_uuids    = data.get("test_uuids", set())
 
+    bundles = {}
     for task_name, task_data in targets.items():
         model, threshold = train_task(
             task_name,
@@ -154,6 +161,8 @@ def train(data, config):
             model_params,
             config,
         )
-        save_bundle(model, feature_names, task_name, threshold, models_dir)
+        save_bundle(model, feature_names, task_name, threshold, models_dir, test_uuids=test_uuids)
+        bundles[task_name] = {"model": model, "threshold": threshold}
 
     print("\nAll models saved.")
+    return bundles

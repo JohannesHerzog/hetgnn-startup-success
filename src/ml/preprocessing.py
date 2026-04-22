@@ -166,16 +166,31 @@ def train_val_test_split(n, config, seed=42):
     return idx[:n_train], idx[n_train:n_train + n_val], idx[n_train + n_val:]
 
 
-def preprocess(config):
-    """Full pipeline: load → features → targets → splits.
+def preprocess(config, filter_fn=None, exclude_uuids=None):
+    """Full pipeline: load → filter → features → targets → splits.
+
+    Args:
+        filter_fn:      Optional callable (df) -> df to filter startups before training.
+        exclude_uuids:  Optional set of startup_uuid strings to exclude (used for
+                        test-set isolation across models G / M / K).
 
     Returns a dict with:
         X             – float32 array (N × F)
         feature_names – list of F column names
         targets       – {"momentum": {y, mask}, "liquidity": {y, mask}}
         splits        – {"train": idx, "val": idx, "test": idx}
+        test_uuids    – set of startup_uuid strings in the test split
     """
     df = load_startups(config)
+
+    if filter_fn is not None:
+        df = filter_fn(df)
+        print(f"  After filter: {len(df):,} rows")
+
+    if exclude_uuids:
+        n_before = len(df)
+        df = df[~df["startup_uuid"].isin(exclude_uuids)].reset_index(drop=True)
+        print(f"  Excluded {n_before - len(df):,} UUIDs (test sets of other models)")
 
     print("Extracting features...")
     feat_df = extract_features(df, config)
@@ -189,9 +204,14 @@ def preprocess(config):
 
     print(f"  Shape: {X.shape} | Train: {len(train_idx):,}  Val: {len(val_idx):,}  Test: {len(test_idx):,}")
 
+    uuids      = df["startup_uuid"].values if "startup_uuid" in df.columns else np.empty(len(df), dtype=object)
+    test_uuids = set(uuids[test_idx].tolist())
+
     return {
         "X":             X,
         "feature_names": feat_df.columns.tolist(),
         "targets":       targets,
         "splits":        {"train": train_idx, "val": val_idx, "test": test_idx},
+        "uuids":         uuids,
+        "test_uuids":    test_uuids,
     }
