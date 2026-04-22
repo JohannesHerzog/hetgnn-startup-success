@@ -144,7 +144,9 @@ def build_targets(df):
 
     # Liquidity mask: only mature startups
     snapshot = pd.Timestamp("2023-06-01")
-    age_days = (snapshot - pd.to_datetime(df["founded_on"], errors="coerce")).dt.days.fillna(0).values
+    founded = pd.to_datetime(df["founded_on"], errors="coerce")
+    founded = founded.where(founded >= pd.Timestamp("1900-01-01"), other=pd.NaT)
+    age_days = (snapshot - founded).dt.days.fillna(0).values
     funding  = df["total_funding_usd"].fillna(0).values
     rounds   = df["num_funding_rounds"].fillna(0).values
 
