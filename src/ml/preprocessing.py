@@ -37,30 +37,37 @@ def encode_descriptions(df, config):
 
     os.makedirs(emb_dir, exist_ok=True)
 
-    descriptions = df["description"].fillna("").tolist()
-
     # --- Raw embeddings (sentence-transformer, 384-dim) ---
     if os.path.exists(cache_path) and os.path.getsize(cache_path) > 0:
         print(f"  Loading cached raw embeddings from {cache_path}")
-        raw = np.load(cache_path)
+        raw_full = np.load(cache_path)
+        # Cache covers the full dataset; select only the rows we need
+        if "_orig_idx" in df.columns and len(raw_full) > len(df):
+            raw = raw_full[df["_orig_idx"].values]
+            print(f"  Selected {len(raw):,} rows from cache")
+        else:
+            raw = raw_full
     else:
         import torch
         device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
         print(f"  Encoding descriptions with sentence-transformer (device={device})...")
-        model = SentenceTransformer("all-MiniLM-L6-v2", device=device)
-        raw = model.encode(descriptions, batch_size=512, show_progress_bar=True).astype(np.float32)
+        model_st = SentenceTransformer("all-MiniLM-L6-v2", device=device)
+        descriptions = df["description"].fillna("").tolist()
+        raw = model_st.encode(descriptions, batch_size=512, show_progress_bar=True).astype(np.float32)
         np.save(cache_path, raw)
         print(f"  Cached raw embeddings to {cache_path}")
+        raw_full = raw
 
-    # --- PCA reduction ---
+    # --- PCA reduction (fit on full cache for best quality) ---
     if os.path.exists(pca_path):
         pca = joblib.load(pca_path)
         print(f"  Loaded PCA model from {pca_path}")
     else:
         from sklearn.decomposition import PCA
-        print(f"  Fitting PCA ({dim} components)...")
+        fit_data = raw_full if len(raw_full) > len(raw) else raw
+        print(f"  Fitting PCA ({dim} components) on {len(fit_data):,} samples...")
         pca = PCA(n_components=dim, random_state=42)
-        pca.fit(raw)
+        pca.fit(fit_data)
         joblib.dump(pca, pca_path)
         print(f"  Saved PCA model to {pca_path}")
 
@@ -182,6 +189,7 @@ def preprocess(config, filter_fn=None, exclude_uuids=None):
         test_uuids    – set of startup_uuid strings in the test split
     """
     df = load_startups(config)
+    df["_orig_idx"] = np.arange(len(df))  # preserve row positions before filtering
 
     if filter_fn is not None:
         df = filter_fn(df)
