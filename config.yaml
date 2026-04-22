@@ -8,6 +8,7 @@ paths:
 
 features:
   whitelist:
+    # --- original features ---
     - founded_on_year
     - has_domain
     - has_linkedin_url
@@ -27,6 +28,56 @@ features:
     - master_count
     - phd_count
     - city
+    # --- additional features ---
+    - employee_count
+    - num_exits
+    - is_sustainable
+    - has_email
+    - has_phone
+    - has_facebook_url
+    - has_twitter_url
+    - has_logo_url
+    - business_degree_count
+    - it_degree_count
+    - law_degree_count
+    - stem_degree_count
+    - other_edu_count
+    - female_ratio
+    - serial_founder_ratio
+    - ivy_league_ratio
+    - bachelor_ratio
+    - master_ratio
+    - phd_ratio
+    - stem_degree_ratio
+    - business_degree_ratio
+    - it_degree_ratio
+    - has_tech_and_biz
+    - top_10_percent_investor_count
+    - top_50_percent_investor_count
+    - days_until_first_funding
+    - accelerator_participation_count
+    - avg_days_between_rounds
+    - funding_growth_rate
+    - implied_monthly_burn
+    - has_down_round
+    - investor_follow_on_ratio
+    - investor_type
+    - country_code
+    - industry_groups
+    - money_angel
+    - investors_angel
+    - money_pre_seed
+    - investors_pre_seed
+    - money_seed
+    - investors_seed
+    - money_series_a
+    - investors_series_a
+    - money_series_b
+    - investors_series_b
+    - money_series_c
+    - investors_series_c
+    - money_series_d
+    - investors_series_d
   description_embedding_dim: 64
 
 model:
