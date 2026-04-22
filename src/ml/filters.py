@@ -48,8 +48,8 @@ def filter_K(df):
     print(f"  filter_K Europe only: {n - len(df):,} removed → {len(df):,} remaining")
     n = len(df)
 
-    df = df[df["founded_on_year"] > 2020].reset_index(drop=True)
-    print(f"  filter_K founded_on_year>2020: {n - len(df):,} removed → {len(df):,} remaining")
+    df = df[df["founded_on_year"] >= 2016].reset_index(drop=True)
+    print(f"  filter_K founded_on_year>=2016: {n - len(df):,} removed → {len(df):,} remaining")
     n = len(df)
 
     df = df[df["num_funding_rounds"] >= 1].reset_index(drop=True)
