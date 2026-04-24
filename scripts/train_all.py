@@ -223,9 +223,32 @@ def main():
 
     all_results = {}
 
+    from src.ml.train import _optimize_threshold
+    import joblib
+
+    def recalibrate_threshold(bundles, model_label, models_dir):
+        """Re-optimise momentum threshold on K's val set and update saved bundle."""
+        print(f"\n  Re-calibrating {model_label} momentum threshold on K val set...")
+        val_idx   = data_K["splits"]["val"]
+        mask      = data_K["targets"]["momentum"]["mask"]
+        v_idx     = _apply_mask(val_idx, mask)
+        X_val_K   = data_K["X"][v_idx]
+        y_val_K   = data_K["targets"]["momentum"]["y"][v_idx]
+        new_thresh = _optimize_threshold(
+            bundles["momentum"]["model"], X_val_K, y_val_K,
+            metric=config["training"].get("threshold_metric", "f1"),
+            recall_target=config["training"].get("threshold_recall_target"),
+        )
+        bundles["momentum"]["threshold"] = new_thresh
+        path   = os.path.join(models_dir, "xgboost_momentum.pkl")
+        bundle = joblib.load(path)
+        bundle["threshold"] = new_thresh
+        joblib.dump(bundle, path)
+        print(f"  Updated threshold → {path}")
+
     # ── Model K ────────────────────────────────────────────────────────────────
     print("\n" + "=" * 60)
-    print("TRAINING MODEL K  (Europe + founded>2020 + ≥1 round)")
+    print("TRAINING MODEL K  (Europe + founded>=2016 + ≥1 round)")
     print("=" * 60)
     data_K    = preprocess(config, filter_fn=filter_K)
     bundles_K = train(data_K, config, models_dir="outputs/models_K")
@@ -234,7 +257,13 @@ def main():
     shared_targets    = data_K["targets"]
     shared_test_idx   = data_K["splits"]["test"]
     shared_test_uuids = data_K["test_uuids"]
-    print(f"\n  Shared test set: {len(shared_test_uuids):,} startups (K's held-out 20%)")
+    # K's val UUIDs are excluded from M/G training so we can use them
+    # for threshold calibration without leakage
+    val_idx_K      = data_K["splits"]["val"]
+    val_uuids_K    = set(data_K["uuids"][val_idx_K].tolist())
+    exclude_from_M = shared_test_uuids | val_uuids_K
+    print(f"\n  Shared test set:  {len(shared_test_uuids):,} startups")
+    print(f"  K val set (for threshold calibration): {len(val_uuids_K):,} startups")
 
     all_results["K"] = evaluate_on_shared_test(
         "K", bundles_K, shared_X, shared_targets, shared_test_idx
@@ -244,9 +273,10 @@ def main():
     print("\n" + "=" * 60)
     print("TRAINING MODEL M  (operating + founded≥2014 + founder>0)")
     print("=" * 60)
-    data_M    = preprocess(config, filter_fn=filter_M, exclude_uuids=shared_test_uuids)
+    data_M    = preprocess(config, filter_fn=filter_M, exclude_uuids=exclude_from_M)
     bundles_M = train(data_M, config, models_dir="outputs/models_M")
     print(f"  M training set: {len(data_M['splits']['train']):,} startups")
+    recalibrate_threshold(bundles_M, "M", "outputs/models_M")
 
     all_results["M"] = evaluate_on_shared_test(
         "M", bundles_M, shared_X, shared_targets, shared_test_idx
@@ -256,9 +286,10 @@ def main():
     print("\n" + "=" * 60)
     print("TRAINING MODEL G  (no filter — all startups)")
     print("=" * 60)
-    data_G    = preprocess(config, exclude_uuids=shared_test_uuids)
+    data_G    = preprocess(config, exclude_uuids=exclude_from_M)
     bundles_G = train(data_G, config, models_dir="outputs/models_G")
     print(f"  G training set: {len(data_G['splits']['train']):,} startups")
+    recalibrate_threshold(bundles_G, "G", "outputs/models_G")
 
     all_results["G"] = evaluate_on_shared_test(
         "G", bundles_G, shared_X, shared_targets, shared_test_idx
