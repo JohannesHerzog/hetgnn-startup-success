@@ -74,6 +74,45 @@ def _optimize_threshold(model, X_val, y_val, metric="f1", recall_target=None):
     return float(best_thresh)
 
 
+def tune_hyperparams(X_train, y_train, X_val, y_val, base_params, n_trials=50, seed=42):
+    """Optuna TPE search maximising AUC-PR on val set. Returns best params dict."""
+    import optuna
+    import xgboost as xgb
+    from sklearn.metrics import average_precision_score
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+    n_neg = int((y_train == 0).sum())
+    n_pos = int((y_train == 1).sum())
+    dynamic_spw = round(n_neg / n_pos, 2) if n_pos > 0 else 1.0
+
+    def objective(trial):
+        params = {
+            **base_params,
+            "scale_pos_weight": dynamic_spw,
+            "n_estimators":     trial.suggest_int("n_estimators", 100, 800),
+            "max_depth":        trial.suggest_int("max_depth", 2, 8),
+            "learning_rate":    trial.suggest_float("learning_rate", 0.005, 0.3, log=True),
+            "subsample":        trial.suggest_float("subsample", 0.4, 1.0),
+            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.4, 1.0),
+            "gamma":            trial.suggest_float("gamma", 0.0, 15.0),
+            "reg_alpha":        trial.suggest_float("reg_alpha", 0.0, 20.0),
+            "reg_lambda":       trial.suggest_float("reg_lambda", 0.0, 20.0),
+            "min_child_weight": trial.suggest_int("min_child_weight", 1, 30),
+        }
+        model = xgb.XGBClassifier(**params, random_state=seed)
+        model.fit(X_train, y_train, eval_set=[(X_val, y_val)], verbose=False)
+        return average_precision_score(y_val, model.predict_proba(X_val)[:, 1])
+
+    study = optuna.create_study(
+        direction="maximize",
+        sampler=optuna.samplers.TPESampler(seed=seed),
+    )
+    study.optimize(objective, n_trials=n_trials, show_progress_bar=True)
+    print(f"  Best AUC-PR: {study.best_value:.4f}")
+    print(f"  Best params: {study.best_params}")
+    return {**base_params, "scale_pos_weight": dynamic_spw, **study.best_params}
+
+
 def train_task(task_name, X, y, mask, splits, model_params, config):
     """Train one XGBoost model; return (model, threshold)."""
     import xgboost as xgb
