@@ -194,7 +194,7 @@ def main():
           f"{len(data_M['splits']['val']):,} val  "
           f"{len(data_M['splits']['test']):,} test")
 
-    models_dir = "outputs/models_M"
+    models_dir = "outputs/models"
     os.makedirs(models_dir, exist_ok=True)
 
     # ── Steps 3–4: Tune + train each task ─────────────────────────────────────
